@@ -1,0 +1,392 @@
+Create new application
+
+PUT _application/search_application/text-search
+{
+  "name": "text-search",
+  "indices": [
+    "search-movies"
+  ],
+  "template": {
+    "script": {
+      "source": """
+      {
+        "fields":["title", "overview"],
+        "_source": false,
+        "query": {
+          "multi_match": {
+            "query": "{{query_string}}",
+            "fields": [{{#fields}}"{{name}}^{{boost}}",{{/fields}}]
+          }
+        }
+      }
+      """,
+      "lang": "mustache",
+      "params": {
+        "fields": [
+          {"name": "title", "boost": 10},
+          {"name": "overview", "boost": 5},
+          {"name": "description_merge", "boost": 2}
+        ]
+      }
+    }
+  }
+}
+
+Search 
+
+POST _application/search_application/text-search/_search
+{
+  "params": {
+    "query_string": "bean",
+		 "fields": [
+          {"name": "title", "boost": 2},
+          {"name": "overview", "boost": 4}
+        ]
+  }
+}
+
+Lab Objectives
+===
+
+In this lab, you'll work on demonstrating Implement Text Search with Query Rules to always ensure the top results for predefined queries.
+
+What Are Query Rules?
+Query rules in Elasticsearch allow you to customize search results based on specific criteria. They help prioritize certain documents for particular queries, ensuring that important content appears at the top of the results. 
+This feature enhances the relevance of search outcomes and improves the overall user experience.
+
+PUT /_query_rules/movie-rules
+{
+  "rules": [
+    {
+      "rule_id": "sponsored_movie_rule",
+      "type": "pinned",
+      "criteria": [
+        {
+          "type": "contains",
+          "metadata": "query_string",
+						"values": ["superhero movie" , "animated movie" ,"kids movie", "superhero"  , "animated" , "kids" , "kid movie" , "kid" ,  "super hero" , "super hero movie" , "animation movie"  , "animation" , "cartoon movie" , "cartoon"  , "DC movie" , "DC" ,  "batman" ,  "batman movie", "dc movie" , "dc" ]
+        }
+      ],
+      "actions": {
+        "docs": [
+          {
+            "_index": "search-movies",
+            "_id": "KWEX65cB-bRjy_5Wfrkq"
+          }
+        ]
+      }
+    }
+  ]
+}
+
+Set up Semantic Search Search Application
+In this section, we'll set up a Semantic Search Application to search the search-movies index, utilizing a semantic query structure. This application will focus on the fields title_vector and overview_vector for more meaningful search results based on context rather than just keywords.
+
+Step 1: Set up Semantic query Search Application to run a semantic query on the title_vector field:
+
+PUT _application/search_application/semantic-search
+{
+  "indices": ["search-movies"],
+  "template": {
+    "script": {
+      "lang": "mustache",
+      "source": """
+      {
+        "fields":["title","overview"],
+        "_source": false,
+        "query": {
+          "semantic": {
+            "query": "{{query_string}}",
+            "field": "{{vector_field}}"
+          }
+        }
+      }
+      """,
+      "params": {
+        "vector_field": "title_vector"
+      }
+    }
+  }
+}
+Perform Multi-field Vector Search
+In this section, we'll enhance further search by using multiple vector fields.
+
+For example, searching for funny for children with only one field might yield results that aren't sutiable for kids. By searching across both the title and overview fields, the results become more precise, correctly highlighting "The Son of Bigfoot", "Barbie: A Perfect Christmas" as relevant funny movies for children, thus improving search accuracy.
+
+In the query, we leverage the boolean query with a should clause that allows partial matches in any of the vector fields. This increases flexibility, as results can match in the title or overview, giving a broader range of relevant hits.
+
+PUT _application/search_application/semantic-search
+{
+  "indices": ["search-movies"],
+  "template": {
+    "script": {
+      "lang": "mustache",
+      "source": """
+      {
+        "fields": ["title", "overview"],
+        "_source": false,
+        "query": {
+          "bool": {
+            "should": [
+              {
+                "semantic": {
+                  "query": "{{query_string}}",
+                  "field": "{{title_field}}"
+                }
+              },
+              {
+                "semantic": {
+                  "query": "{{query_string}}",
+                  "field": "{{overview_field}}"
+                }
+              }
+            ]
+          }
+        }
+      }
+      """,
+      "params": {
+        "title_field": "title_vector",
+        "overview_field": "overview_vector"
+      }
+    }
+  }
+}
+Implement Semantic Search with Filters
+Filters help you focus on specific criteria like date ranges or genres, making your search results more relevant.
+
+For example, when searching for Superhero films with filters, you can find recent superhero movies that are also funny, focusing in on exactly what you want.
+
+Another example could be when searching for funny for children with filters, you can filter out any film that taggs "adult": true to avoid irrelevant results like "Wild Child".
+
+In this lab, we'll use the boolean query filter clause to:
+
+Date Range: Display movies released within a specific period.
+Genre: Focus on movies from selected genres like "Action" or "Comedy."
+Modify your search application configuration to include a filtering option:
+
+PUT _application/search_application/semantic-search
+{
+  "indices": ["search-movies"],
+  "template": {
+    "script": {
+      "lang": "mustache",
+      "source": """
+      {
+        "fields": ["title", "overview"],
+        "_source": false,
+        "query": {
+          "bool": {
+            "must": [
+              {
+                "semantic": {
+                  "query": "{{query_string}}",
+                  "field": "{{vector_field}}"
+                }
+              }
+            ],
+            "filter": [
+              {
+                "range": {
+                  "release_date": {
+                    "gte": "{{start_date}}",
+                    "lte": "{{end_date}}"
+                  }
+                }
+              },
+              {
+                "terms": {
+                  "genres.keyword": [{{#genres}}"{{.}}",{{/genres}}]
+                }
+              }
+            ]
+          }
+        }
+      }
+      """,
+      "params": {
+        "vector_field": "title_vector",
+        "start_date": "2015-01-01",
+        "end_date": "2024-01-01",
+        "genres": ["Action", "Comedy"]
+      }
+    }
+  }
+}
+
+
+Lab Objectives
+In this lab, we'll delve deeper into search concepts and explore the differences in relevance between all three retrieval methods: Keyword, Vector, and Hybrid Search. We will:
+
+Set up a Search Application for hybrid search queries combining Keyword Search and Semantic Search.
+Add filters to Hybrid Search
+Improve and personalised results with Semantic Reranking
+What is Hybrid Search?
+Hybrid search is a retrival strategy that merges the traditional keyword-based search with the more modern vector-based search. It leverages the best of both worlds, harnessing the precision of keyword search and the conceptual understanding of vector search, resulting in a more versatile and comprehensive search solution.
+
+What is Semantic Reranking?
+Semantic reranking is the process of reordering search results based on the understanding of user intent and the contextual meaning of search queries. This improves the relevance and accuracy of search results, providing users with more precise information related to their queries. Semantic reranking can also incorporate user context provided in free text to improve personalization.
+
+Set up Hybrid Search Search Application
+In this lab we will build on top of both full text search and semantic search in a single query to provide a hybrid search experience, which combines the strengths of both methods to deliver more relevant and comprehensive search results.
+
+To merge both retrieval methods, we're leveraging **Reciprocal Rank Fusion (RRF)** retriever:
+
+Full-Text Search: The first retriever uses a multi-match query to search across fields like title and overview, applying boosts to prioritize results (e.g., title with boost 10, overview with boost 5).
+Semantic Search: The second retriever uses a semantic query on the title_vector field, allowing for meaning-based search.
+Step 1: Set up hybrid query Search Application:
+PUT _application/search_application/hybrid-search
+{
+  "indices": ["search-movies"],
+  "template": {
+    "script": {
+      "lang": "mustache",
+      "source": """
+      {
+        "retriever": {
+          "rrf": {
+            "retrievers": [
+              {
+                "standard": {
+                  "query": {
+                    "multi_match": {
+                      "query": "{{query_string}}",
+                      "fields": [{{#fields}}"{{name}}^{{boost}}",{{/fields}}]
+                    }
+                  }
+                }
+              },
+              {
+                "standard": {
+                  "query": {
+                    "semantic": {
+                      "field": "{{vector_field}}",
+                      "query": "{{query_string}}"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "fields": [
+          "title",
+          "overview"
+        ],
+        "_source": false
+      }
+      """,
+      "params": {
+        "vector_field": "title_vector",
+        "fields": [
+          { "name": "title", "boost": 10 },
+          { "name": "overview", "boost": 5 },
+          { "name": "description_merge", "boost": 2 }
+        ]
+      }
+    }
+  }
+}
+Hybrid Search with Filters
+In order to refine results, it is also possible to add filters that will apply on all retrievers (It is also possoble to apply filters on each retrievers seperatly).
+
+To filter only on movies that we're produced in Japan, we can update the search application by adding the filter clause under rrf and add Japan as the production country in the params section:
+
+After updating the Hybrid Search application, run again the term "jjk 0' in the search bar and compare results.
+
+PUT _application/search_application/hybrid-search
+{
+  "indices": ["search-movies"],
+  "template": {
+    "script": {
+      "lang": "mustache",
+      "source": """
+      {
+        "retriever": {
+          "rrf": {
+			"filter": {
+               "term": {
+                 "production_countries.keyword": {
+                   "value": "{{production_countries}}"
+                 }
+               }
+              },
+            "retrievers": [
+              {
+                "standard": {
+                  "query": {
+                    "multi_match": {
+                      "query": "{{query_string}}",
+                      "fields": [{{#fields}}"{{name}}^{{boost}}",{{/fields}}]
+                    }
+                  }
+                }
+              },
+              {
+                "standard": {
+                  "query": {
+                    "semantic": {
+                      "field": "{{vector_field}}",
+                      "query": "{{query_string}}"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "fields": [
+          "title",
+          "overview"
+        ],
+        "_source": false
+      }
+      """,
+      "params": {
+        "production_countries": "Japan",
+        "vector_field": "title_vector",
+        "fields": [
+          { "name": "title", "boost": 10 },
+          { "name": "overview", "boost": 5 },
+          { "name": "description_merge", "boost": 2 }
+        ]
+      }
+    }
+  }
+}
+
+Semantic Reranker with Retrievers
+Elasticsearch supports choosing from various reranking models. It is possible to:
+
+Leveraging a 3rd party and Integrate directly with Cohere Rerank, Google Vertex AI or HuggingFace inference endpoint.
+Upload a model from HuggingFace to Elastic through Eland.
+In this example, we'll use cross-encoder/ms-marco-MiniLM-L-6-v2 and upload it to Elastic. By doing so, the reranking process runs within the Elasticsearch environment itself.
+
+Step 1: Load reranker with eland:
+
+docker run -it --rm docker.elastic.co/eland/eland:8.15.0 \
+eland_import_hub_model \
+--url http://kubernetes-vm:30920 \
+--es-username elastic \
+--es-password changeme \
+--hub-model-id cross-encoder/ms-marco-MiniLM-L-6-v2 \
+--task-type text_similarity \
+--start
+
+
+PUT _inference/rerank/my-msmarco-minilm-model
+{
+  "service": "elasticsearch",
+  "service_settings": {
+    "num_allocations": 1,
+    "num_threads": 1,
+    "model_id": "cross-encoder__ms-marco-minilm-l-6-v2"
+  }
+}
+
+Step 3: Now that we've set the reranker up, we can test it in Dev Tools. We will leverage hybrid search with filters alongside Semantic Reranking using text_similarity_reranker to refine results.
+
+As part of the exercise, run the reanker with different prompts and review impact on results.
+
+In this example, we're also adding personalisation aspects the the reranker, by adding to the prompt: "films for 10 year old kids."
+
