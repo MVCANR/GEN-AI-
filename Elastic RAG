@@ -1,1 +1,438 @@
+ Unlike a standard keyword/lexical search, a semantic query always brings back 10 hits. This can be controlled with the "size" parameter.
+
+GET elastic_blogs-full-embeddings_e5/_search
+{
+ "size": 15,
+  "query": {
+    "match": {
+      "body.semantic": {
+        "query": "five kangaroos jumped the fence"
+      }
+    }
+  }
+}
+
+In a hybrid search the match query works against both the semantic_text data type and regular text data type fields. A multi-match command, say, only works against text fields. In this search we see the use of RRF to combine the results of the text and semantic_text queries.
+
+GET elastic_blogs-full-embeddings_e5/_search
+{
+  "retriever": {
+    "rrf": {
+      "rank_window_size": 100,         //larger is slower but more relevant
+      "rank_constant": 60,                   //default "good value" in original paper on rrf
+      "retrievers": [
+        {
+          "standard": {
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "How do I secure my network between nodes?",
+												"fields": [                                                                               //all text fields
+                        "body",
+                        "headings",
+                        "meta_description",
+                        "title^2"
+                      ]
+                    }
+                  },
+                  {
+                    "match": {
+                      "body.semantic": {                                                               //semantic_text field
+                        "query": "How do I secure my network between nodes?"
+                      }
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "multi_match": {
+                      "type": "phrase",
+                      "query": "How do I secure my network between nodes?",
+                    "fields": [
+                        "body",
+                        "headings",
+                        "meta_description",
+                        "title^2"
+                      ]
+                    }
+                  }
+                ],
+                "filter": [
+                  {
+                    "range": {
+                      "publish_date": {
+                        "gte": "now-10y"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
+
+Search Templates
+Step 9: Create a basic search template called "my-search-template" and leave the parameters without values.
+
+PUT _scripts/my-search-template
+{
+  "script": {
+    "lang": "mustache",
+    "source": {
+      "query": {
+        "match": {
+          "message": "{{query_string}}"
+        }
+      },
+      "from": "{{from}}",
+      "size": "{{size}}"
+    }
+  }
+}
+: Parameter values can be assigned. The _render API will return the search showing the parameters substituted with their values. The rendered template has no name and is not callable.
+
+POST _render/template      //use _render to immediately test a template
+{
+    "source": {
+      "query": {
+        "match": {
+          "message": "{{query_string}}"
+        }
+      },
+      "from": "{{from}}",
+      "size": "{{size}}"
+    },
+  "params": {
+    "query_string": "hello world",
+    "from": 20,
+    "size": 100
+  }
+}
+ Render and call a stored search template and populate the parameters.
+
+POST _render/template
+{
+  "id": "my-search-template",
+  "params": {
+    "query_string": "hello world",
+    "from": 20,
+    "size": 10
+  }
+}
+
+PUT _scripts/RAG_search_template
+{
+  "script": {
+    "lang": "mustache",
+    "source": {
+      "retriever": {
+        "rrf": {
+          "rank_window_size": 100,   //larger is slower but more relevant
+          "rank_constant": 60,       //default in original paper on rrf
+          "retrievers": [
+            {
+            "standard": {
+              "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "{{query_string}}",
+                      "fields": [
+                        "body",
+                        "headings",
+                        "meta_description",
+                        "title^2"
+                      ]
+                    }
+                  },
+                  {
+                    "match": {
+                      "body.semantic": {
+                        "query": "{{query_string}}"
+                      }
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "multi_match": {
+                      "type": "phrase",
+                      "query": "{{query_string}}",
+                    "fields": [
+                        "body",
+                        "headings",
+                        "meta_description",
+                        "title^2"
+                      ]
+                    }
+                  }
+                ],
+                "filter": [
+                  {
+                    "range": {
+                      "publish_date": {
+                        "gte": "{{date_start}}"
+           }}}
+           ]
+  }}}}]}}}}}
+
+ Improve the search template with defaults and conditional values.
+
+PUT _scripts/RAG_search_template2
+{
+  "script": {
+    "lang": "mustache",
+    "source":
+    """
+      {
+      "retriever": {
+        "rrf": {
+          "rank_window_size": 100,
+          "rank_constant": 60,
+          "retrievers": [
+            {
+            "standard": {
+              "query": {
+                "bool": {
+                   "must": [
+                      {
+                        "multi_match": {
+                          "query": "{{query_string}}{{^query_string}}hello world{{/query_string}}",
+                        "fields": [
+                          "body",
+                          "headings",
+                          "meta_description",
+                          "title^2"
+                         ]
+                        }
+                      },
+                  {
+                    "match": {
+                      "body.semantic": {
+                        "query": "{{query_string}}{{^query_string}}hello world{{/query_string}}"
+                      }
+                    }
+                  }
+              ],
+              "should": [
+                      {
+                        "multi_match": {
+                          "type": "phrase",
+                          "query": "{{query_string}}{{^query_string}}hello world{{/query_string}}",
+                         "fields": [
+                            "body",
+                            "headings",
+                            "meta_description",
+                            "title^2"
+                         ]
+                        }
+                      }
+              ]
+              {{#start}}
+              ,
+              "filter": [
+                      {
+                        "range": {
+                          "publish_date": {
+                            "gte": "{{start}}",
+                            "lte": {{end}}{{^end}}"now"{{/end}}
+                          }
+                        }
+                      }
+                ]
+                {{/start}}
+               }
+              }
+             }}
+            ]
+          }},
+        "from": "{{from}}{{^from}}0{{/from}}",
+        "size": "{{size}}{{^size}}10{{/size}}"
+    }
+    """
+  }
+}
+
+
+Search Applications
+In order to call a search template from the python client (which we will for our RAG solution) the template code needs to be in a search_application.
+
+Step 18: Example of a simple search application:
+
+PUT _application/search_application/my_search_application
+{
+  "indices": ["elastic_blogs-full-embeddings_e5"],
+  "template": {
+    "script": {
+      "lang": "mustache",
+      "source": """
+        {
+          "size": 50,
+          "query": {
+            "match":{
+            "body.semantic":{
+                  "query": "{{query}}"
+              }
+            }
+          }
+        }
+      """,
+      "params": {
+        "query": "some words here"
+      }
+    }
+  }
+}
+ Run a _search calling the above search_application.
+POST _application/search_application/my_search_application/_search
+{
+  "params": {
+    "query": "elasticsearch vector store"
+  }
+}
+
+To see a list of search applications:
+
+GET _application/search_application
+
+If you need to delete a particular search application.
+
+
+copy
+# DELETE _application/search_application/my_search_application
+
+Step 21: At last, we are creating here the search application that we will call from the python Elasticsearch RAG application in the upcoming track.
+
+PUT _application/search_application/RAG_application
+{
+  "indices": ["elastic_blogs-full-embeddings_e5"],
+  "template":{
+  "script": {
+    "lang": "mustache",
+    "source": """
+     {
+      "retriever": {
+        "rrf": {
+          "rank_window_size": 100,
+          "rank_constant": 60,
+          "retrievers": [
+            {
+            "standard": {
+              "query": {
+                "bool": {
+                   "must": [
+                      {
+                        "multi_match": {
+                          "query": "{{query_string}}{{^query_string}}hello world{{/query_string}}",
+                            "fields": [
+                            "body",
+                            "headings",
+                            "title"
+                          ]
+                        }
+                      },
+                  {
+                    "match": {
+                      "body.semantic": {
+                        "query": "{{query_string}}{{^query_string}}hello world{{/query_string}}"
+                      }
+                    }
+                  }
+              ],
+              "should": [
+                      {
+                        "multi_match": {
+                          "type": "phrase",
+                          "query": "{{query_string}}{{^query_string}}hello world{{/query_string}}",
+                          "fields": [
+                            "body",
+                            "headings",
+                            "title"
+                          ]
+                        }
+                      }
+              ]
+              {{#start}}
+              ,
+              "filter": [
+                      {
+                        "range": {
+                          "publish_date": {
+                            "gte": "{{start}}",
+                            "lte": "{{end}}{{^end}}now{{/end}}"
+                          }
+                        }
+                      }
+                ]
+                {{/start}}
+               }//ends bool
+              }
+             }
+             }
+            ]
+           }
+          },
+        "from": "{{from}}{{^from}}0{{/from}}",
+        "size": "{{size}}{{^size}}10{{/size}}"
+    }
+    """
+  }
+ }
+}
+
+Step 22: Test with _render_query
+
+
+copy
+POST _application/search_application/RAG_application/_render_query
+{
+  "params": {
+       "query_string": "kangaroos"
+  }
+}
+Step 23: Test all the parameters
+
+
+copy
+POST _application/search_application/RAG_application/_render_query
+{
+  "params": {
+    "query_string": "another long string of words to search",
+    "start": "now-2y",
+    "end": "now+1M",
+    "from": 1,
+    "size": 12
+  }
+}
+Step 24: What if no parameters are provided? This will test that all the default values are working:
+
+
+copy
+POST _application/search_application/RAG_application/_render_query
+{
+  "params": {
+  }
+}
+Step 25: To see a specific search application
+
+
+copy
+GET _application/search_application/RAG_application
+Step 26: Finally we can call our search application with the _search API.
+
+
+copy
+POST _application/search_application/RAG_application/_search
+{
+  "params": {
+    "query_string": "my first query"
+  }
+}
 
