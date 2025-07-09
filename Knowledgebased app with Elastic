@@ -1,0 +1,653 @@
+Prepare Your Data for Intelligence
+Objective: Transform raw data into a format suitable for semantic search.
+Key Concept: Inference API
+Deploys pre-trained Machine Learning (ML) models within Elastic.
+ELSER: Elastic Learned Sparse Representation – our chosen model for generating sparse embeddings.
+Action: Create an ELSER Inference API endpoint.
+Key Concept: semantic_text Field Type
+A special field in Elasticsearch that automatically generates embeddings from text.
+Links directly to an Inference API.
+Action: Add semantic_text fields to your index mapping.
+Populating the Index:
+Use the _reindex API to copy data from a source index to your new index.
+This process automatically triggers embedding generation for semantic_text fields.
+[Placeholder for a graphic showing data flow: Raw Data -> ELSER Model -> Semantic Embeddings in Index]
+
+create inference API Copy the code below and run with the little arrow
+
+PUT _inference/sparse_embedding/my-elser-endpoint
+{
+  "service": "elasticsearch",
+  "service_settings": {
+    "adaptive_allocations": {
+      "enabled": true,
+      "min_number_of_allocations": 1,
+      "max_number_of_allocations": 4
+    },
+    "num_threads": 1,
+    "model_id": ".elser_model_2_linux-x86_64"
+  }
+}
+
+#Create a new index with embeddings
+Get the mapping from wiki-voyage_2025-03-07_no-embeddings_small-aa
+
+copy
+GET wiki-voyage_2025-03-07_no-embeddings_small-aa/_mapping
+Use the output to create the mapping for a new index wiki-voyage_elser
+The one change (aside from the name!) is to add a semantic_text field
+
+
+PUT wiki-voyage_elser
+{
+    "mappings": {
+      "properties": {
+        "auxiliary_text": {
+          "type": "text",
+          "copy_to": [
+            "auxiliary_text_semantic"
+          ]
+        },
+        "auxiliary_text_semantic": {
+          "type": "semantic_text",
+          "inference_id": "my-elser-endpoint",
+          "model_settings": {
+            "task_type": "sparse_embedding"
+          }
+        },
+        "category": {
+          "type": "keyword"
+        },
+        "content_model": {
+          "type": "keyword"
+        },
+        "coordinates": {
+          "type": "nested",
+          "properties": {
+            "coord": {
+              "type": "geo_point"
+            },
+            "dim": {
+              "type": "integer"
+            },
+            "globe": {
+              "type": "keyword"
+            },
+            "primary": {
+              "type": "boolean"
+            }
+          }
+        },
+        "create_timestamp": {
+          "type": "date",
+          "format": "yyyy-MM-dd'T'HH:mm:ss'Z'"
+        },
+        "defaultsort": {
+          "type": "text",
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 256
+            }
+          }
+        },
+        "external_link": {
+          "type": "wildcard"
+        },
+        "heading": {
+          "type": "keyword"
+        },
+        "incoming_links": {
+          "type": "integer"
+        },
+        "index": {
+          "properties": {
+            "_id": {
+              "type": "text",
+              "fields": {
+                "keyword": {
+                  "type": "keyword",
+                  "ignore_above": 256
+                }
+              }
+            },
+            "_type": {
+              "type": "text",
+              "fields": {
+                "keyword": {
+                  "type": "keyword",
+                  "ignore_above": 256
+                }
+              }
+            }
+          }
+        },
+        "language": {
+          "type": "keyword"
+        },
+        "namespace": {
+          "type": "integer"
+        },
+        "namespace_text": {
+          "type": "keyword"
+        },
+        "opening_text": {
+          "type": "text"
+        },
+        "outgoing_link": {
+          "type": "wildcard"
+        },
+        "page_id": {
+          "type": "integer"
+        },
+        "popularity_score": {
+          "type": "float"
+        },
+        "redirect": {
+          "type": "nested",
+          "properties": {
+            "namespace": {
+              "type": "integer"
+            },
+            "title": {
+              "type": "keyword"
+            }
+          }
+        },
+        "score": {
+          "type": "float"
+        },
+        "source_text": {
+          "type": "text",
+          "copy_to": [
+            "source_text_semantic"
+          ]
+        },
+        "source_text_semantic": {
+          "type": "semantic_text",
+          "inference_id": "my-elser-endpoint",
+          "model_settings": {
+            "task_type": "sparse_embedding"
+          }
+        },
+        "template": {
+          "type": "keyword"
+        },
+        "text": {
+          "type": "text"
+        },
+        "text_bytes": {
+          "type": "integer"
+        },
+        "timestamp": {
+          "type": "date",
+          "format": "yyyy-MM-dd'T'HH:mm:ss'Z'"
+        },
+        "title": {
+          "type": "text",
+          "copy_to": [
+            "title_semantic"
+          ]
+        },
+        "title_semantic": {
+          "type": "semantic_text",
+          "inference_id": "my-elser-endpoint",
+          "model_settings": {
+            "task_type": "sparse_embedding"
+          }
+        },
+        "version": {
+          "type": "integer"
+        },
+        "weighted_tags": {
+          "type": "keyword"
+        },
+        "wiki": {
+          "type": "keyword"
+        },
+        "wikibase_item": {
+          "type": "keyword"
+        }
+      }
+    }
+  }
+
+Generate embeddings with the new index
+Use _reindex to copy the existing index that does not contain embeddings to a new index.
+
+This will automatically create embedddings for the semantic_text fields we added in the mapping
+
+Note
+In the interest of time we are using a small sample index containing 16 document.
+
+In later challenges we will use the index wiki-voyage_2025-03-07_elser-embeddings which was pre-created to have embeddings for the full dataset
+
+run the following command in the console
+
+POST _reindex?wait_for_completion=false
+{
+  "source": {
+    "index": "wiki-voyage_2025-03-07_no-embeddings_small-aa"
+  },
+  "dest": {
+    "index": "wiki-voyage_elser"
+  }
+}
+3. run the _tasks command with the task id
+
+
+copy
+GET _tasks/<task_id>
+# eg the output from my command was "task" : "C-humgfTQFetfPVf7AjsZA:248479"
+# GET _tasks/C-humgfTQFetfPVf7AjsZA:248479
+For _reindex this might be helpful if you forget to copy the task id.  This will show all running reindexing tasks    
+GET _tasks?actions=*reindex
+You should see "completed": true, and ""created": 16
+
+Confirm the new index is ready
+Count the number of documents in the new index
+Run the folowwing command
+
+
+copy
+GET wiki-voyage_elser/_count
+You should see: "count": 16
+
+
+Lab 2: Design Your Intelligent Search Pattern
+Objective: Combine different search techniques for superior relevance.
+
+Hybrid Search:lexical-semantic.jpg
+
+Semantic Search: Finds documents based on the meaning of your query.
+{
+  "query": {
+    "semantic": {
+      "field": "source_text_semantic",
+      "query": "popular shopping place"
+    }
+  }
+}
+Lexical (Keyword) Search: Finds documents based on exact word matches.
+{
+  "query": {
+    "match": {
+      "field": "source_text",
+      "query": "popular shopping"
+    }
+  }
+}
+Ranked Reciprocal Fusion (RRF):
+
+A method to combine results from multiple search types (semantic, lexical, etc.).
+It intelligently blends the rankings to produce a single, highly relevant result set.
+Action: Implement rrf to combine semantic and lexical queries.
+
+
+Build Up a Hybrid Query
+Note
+From here forward we will be using the pre-generated index containg embeddings for the full Wiki Voyage
+
+wiki-voyage_2025-03-07_elser-embeddings
+
+create standard semantic match query on body
+
+GET wiki-voyage_2025-03-07_elser-embeddings/_search
+{
+  "query": {
+    "match": {
+      "source_text_semantic": "what is a popular place for shopping"
+    }
+  }
+}
+Convert this to a retriever format
+
+GET wiki-voyage_2025-03-07_elser-embeddings/_search
+{
+  "retriever": {
+    "standard": {
+      "query": {
+        "match": {
+          "source_text_semantic": "what is a popular place for shopping"
+        }
+      }
+    }
+  }
+}
+Create a lexical match query
+
+GET wiki-voyage_2025-03-07_elser-embeddings/_search
+{
+  "retriever": {
+    "standard": {
+      "query": {
+        "match": {
+          "source_text": "popular shopping"
+        }
+      }
+    }
+  }
+}
+
+Convert both of these to a hybrid retriever using rrf
+
+GET wiki-voyage_2025-03-07_elser-embeddings/_search
+{
+  "retriever": {
+    "rrf": {
+      "retrievers": [
+        {
+          "standard": {
+            "query": {
+              "match": {
+          "source_text_semantic": "what is a popular place for shopping"
+              }
+            }
+          }
+        },
+        {
+    "standard": {
+      "query": {
+        "match": {
+          "source_text_": "popular shopping"
+        }
+      }
+    }
+        }
+      ]
+    }
+  }
+}
+
+Highlight the relevant matches
+We will return the sections of text that were most relevant to the query using the highlight param
+
+To make things clearer in the output, we set `"_source": false"
+
+GET wiki-voyage_2025-03-07_elser-embeddings/_search
+{
+  "retriever": {
+    "rrf": {
+      "retrievers": [
+        {
+          "standard": {
+            "query": {
+              "match": {
+          "source_text_semantic": "what is a popular place for shopping"
+              }
+            }
+          }
+        },
+        {
+    "standard": {
+      "query": {
+        "match": {
+          "source_text": "popular shopping"
+        }
+      }
+    }
+        }
+      ]
+    }
+  },
+  "highlight": {
+    "fields": {
+      "source_text_semantic": {
+        "order": "score",
+        "number_of_fragments": 1
+      },
+      "source_text": {
+        "order": "score",
+        "number_of_fragments": 1
+      }
+    }
+  },
+	"_source": false
+}
+
+
+Create a Geo Bounding Box
+Our app will have a map with points showing the location of the search results.
+
+We will allow our users to draw a "bounding box" on the map to filter results to that area.
+
+To do that we need to create a geo_bounding_box filter
+
+Expand for the key section of code
+Copy the code below into the console and run it The bounding box is for the Chicago area
+
+GET wiki-voyage_2025-03-07_elser-embeddings/_search
+{
+  "retriever": {
+    "standard": {
+      "query": {
+        "nested": {
+          "path": "coordinates",
+          "query": {
+            "bool": {
+              "filter": {
+                "geo_bounding_box": {
+                  "coordinates.coord": {
+                    "top_left": {
+                      "lon": -81.33178710937501,
+                      "lat": 28.806173508854776
+                    },
+                    "bottom_right": {
+                      "lon": -83.22143554687501,
+                      "lat": 25.58208527870072
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "_source": false,
+  "fields": [
+    "title",
+    "opening_text",
+    "coordinates.coord"
+  ]
+}
+
+
+Lab 3: Configure Your Application
+Objective: Integrate the powerful Elasticsearch queries into a user-facing application.
+Application Structure (Simplified):
+We'll examine route.ts files within the app/api directory.
+app/api/search/route.ts: Handles the main search queries.
+app/api/geo-search/route.ts: Handles map-specific searches.
+Key Code Sections:
+Search Route: Embed the hybrid rrf query into the queryBody.
+Search Route: Logic to filter results for documents with location data (exists query on coordinates.coord).
+Geo-Search Route: Implement the geo_bounding_box query using dynamic latitude/longitude values from the frontend.
+
+
+
+import { NextResponse } from "next/server"
+
+export async function POST(request: Request) {
+  try {
+    const { query, url, apiKey, mapLocationOnly } = await request.json()
+
+    if (!url || !apiKey || !query) {
+      return NextResponse.json({ success: false, error: "Missing required parameters" }, { status: 400 })
+    }
+
+    const cleanUrl = url.endsWith("/") ? url.slice(0, -1) : url
+
+    // Build the query body
+    const queryBody: any = {
+      size: 20,
+      retriever: {
+        rrf: {
+          rank_window_size: 20,
+          retrievers: [
+            {
+              standard: {
+                query: {
+                  semantic: {
+                    field: "source_text_semantic",
+                    query: query,
+                  },
+                },
+              },
+            },
+            {
+              standard: {
+                query: {
+                  multi_match: {
+                    query: query,
+                    fields: ["source_text"],
+                  },
+                },
+              },
+            },
+          ],
+        },
+      },
+      _source: false,
+      fields: ["title", "opening_text", "source_text", "coordinates.coord"],
+    }
+
+    // Add filter for map location if requested
+    if (mapLocationOnly) {
+      queryBody.retriever.rrf.filter = {
+        nested: {
+          path: "coordinates",
+          query: {
+            exists: {
+              field: "coordinates.coord",
+            },
+          },
+        },
+      }
+    }
+
+    const response = await fetch(`${cleanUrl}/wiki-voyage_2025-03-07_elser-embeddings/_search`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `ApiKey ${apiKey}`,
+      },
+      body: JSON.stringify(queryBody),
+      signal: AbortSignal.timeout(10000),
+    })
+
+    if (!response.ok) {
+      return NextResponse.json(
+        { success: false, error: `Elasticsearch error: ${response.status} ${response.statusText}` },
+        { status: response.status },
+      )
+    }
+
+    const data = await response.json()
+
+    // Log the first result to see the structure
+    if (data.hits.hits && data.hits.hits.length > 0) {
+      console.log("Sample result structure:", JSON.stringify(data.hits.hits[0], null, 2))
+    }
+
+    return NextResponse.json({ success: true, data: data.hits.hits || [] })
+  } catch (error) {
+    console.error("Error in search API:", error)
+    return NextResponse.json(
+      { success: false, error: error instanceof Error ? error.message : "Unknown error" },
+      { status: 500 },
+    )
+  }
+}
+
+
+import { NextResponse } from "next/server"
+
+export async function POST(request: Request) {
+  try {
+    const { bbox, url, apiKey } = await request.json()
+
+    if (!url || !apiKey || !bbox || !Array.isArray(bbox) || bbox.length !== 4) {
+      return NextResponse.json({ success: false, error: "Missing or invalid parameters" }, { status: 400 })
+    }
+
+    const [minLng, minLat, maxLng, maxLat] = bbox
+    const cleanUrl = url.endsWith("/") ? url.slice(0, -1) : url
+
+    console.log("Geo search with bbox:", bbox)
+
+    // Use Elasticsearch's geo_bounding_box query directly
+    const queryBody = {
+      size: 100,
+      query: {
+        nested: {
+          path: "coordinates",
+          query: {
+            bool: {
+              filter: {
+                geo_bounding_box: {
+                  "coordinates.coord": {
+                    top_left: {
+                      lat: maxLat,
+                      lon: minLng,
+                    },
+                    bottom_right: {
+                      lat: minLat,
+                      lon: maxLng,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      _source: false,
+      fields: ["title", "opening_text", "source_text", "coordinates.coord"],
+    }
+
+    const response = await fetch(`${cleanUrl}/wiki-voyage_2025-03-07_elser-embeddings/_search`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `ApiKey ${apiKey}`,
+      },
+      body: JSON.stringify(queryBody),
+      signal: AbortSignal.timeout(10000),
+    })
+
+    if (!response.ok) {
+      return NextResponse.json(
+        { success: false, error: `Elasticsearch error: ${response.status} ${response.statusText}` },
+        { status: response.status },
+      )
+    }
+
+    const data = await response.json()
+
+    console.log(`Geo search returned ${data.hits.hits?.length || 0} results using geo_bounding_box filter`)
+
+    return NextResponse.json({ success: true, data: data.hits.hits || [] })
+  } catch (error) {
+    console.error("Error in geo-search API:", error)
+    return NextResponse.json(
+      { success: false, error: error instanceof Error ? error.message : "Unknown error" },
+      { status: 500 },
+    )
+  }
+}
+
+Lab 4: Run and Test Your Application
+Objective: Launch the application and observe the intelligent search and map functionalities.
+Running the App:
+You will be provided with commands to set up the Node.js environment and start the development server.
+npm install: Installs project dependencies.
+npm run dev: Runs the development server.
+Testing Features:
+Perform semantic searches and observe the relevance.
+Filter results to show only those with map locations.
+Interact with the map component: draw bounding boxes, zoom in/out, and see how search results update dynamically.
+
+aWhxVTc1Y0JWOTFTR1ZPOVJEOXU6TXEtR2doMFdQREdWa01yRTJfQWhvQQ==
+
