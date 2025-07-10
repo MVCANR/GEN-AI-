@@ -1,0 +1,125 @@
+
+Introduction Video
+Welcome to Module6 - Search and RAG Evaluation
+By the end of this workshop, you will learn how to use evaluation tools as a basis for tuning Search and RAG experiences in Elasticsearch.
+
+What specific version of Elasticsearch is this
+Elasticsearch 8.18.0 Enterprise, Self-Managed.
+Assumptions
+This module assumes you are already familiar with Kibana DevTools, _search queries using the Elasticsearch query DSL, and working with semantic_text fields.
+
+Learning Objectives
+Challenge 1 - Turn a search query into a /_rank_eval command using NDCG.
+Challenge 2 - Utilize a provided framework to evaluate the quality of a search strategy.
+Challenge 3 - Create new search strategies to see the impact of semantic search.
+Challenge 4 - Perform a DeepEval to judge the 'correctness' of RAG results.
+Challenge 5 - Evaluate the impact of semantic reranking on RAG using DeepEval.
+Watch the video!
+Open the Overview Video tab if not open
+Watch the video 😁
+You can watch this video in a separate tab here.
+
+  First, make sure some /_inference endpoints are set up correctly.
+
+Run the following commands in the console >
+
+
+  PUT _inference/text_embedding/my-e5-endpoint
+{
+  "service": "elasticsearch",
+  "service_settings": {
+    "adaptive_allocations": {
+      "enabled": true,
+      "min_number_of_allocations": 1,
+      "max_number_of_allocations": 10
+    },
+    "num_threads": 1,
+    "model_id": ".multilingual-e5-small"
+  }
+}
+
+PUT /_inference/rerank/my-elastic-rerank
+{
+  "service": "elasticsearch",
+  "service_settings": {
+        "num_threads": 1,
+        "model_id": ".rerank-v1",
+        "adaptive_allocations": {
+          "enabled": true,
+          "min_number_of_allocations": 1,
+          "max_number_of_allocations": 4
+        }
+      }
+}
+
+
+After both of those inference APIs have been installed, run this test to make sure vector search is working >
+
+  GET /wiki-voyage_2025-03-07_e5-embeddings/_search
+{
+  "query": {
+          "semantic": {
+            "field": "source_text_semantic",
+            "query": "In which section of the city is the Eiffel Tower?"
+          }
+      },
+  "_source": ["title"]
+}
+
+For this lab, we'll be working with creative commons data from WikiVoyage, a community-curated travel wiki. This data has already been ingested into your environment in several different ways.
+
+To see the data in Elasticsearch
+
+Run the following commands in the console >
+GET /_cat/indices/wiki-voyage_2025-03-07_e5-embeddings?format=json
+
+GET /wiki-voyage_2025-03-07_e5-embeddings/_mapping
+
+  Inside the data there are a few essential fields we'll make use of:
+
+title : the title of the page
+category : can be useful for filtering out pages we don't want
+source_text : the text from the wiki articles
+source_text_semantic : the text indexed with e5 dense vectors as a semantic_text field
+Let's run a test query
+
+Run the following command in the console >
+
+  GET /wiki-voyage_2025-03-07_e5-embeddings/_search
+{
+  "query": {
+    "multi_match": {
+      "query": "What is a good time of year to avoid the crowds in Barcelona",
+      "fields": [
+        "source_text"
+      ]
+    }
+  },
+  "_source": ["title","source_text"]
+}
+
+  We can see that the top result is Barcelona, this document does indeed have the answer to the question we are looking for.
+
+‼️ Make note of the _id of the Barcelona document, we'll need it for the next step.
+Step 2 - Converting a search into a Rank Evaluation
+Documentation for /_rank_eval queries in Elasticsearch can be found here: Documentation
+
+Rank evaluation depends on a list of judgements for which documents are good results in the context of a use case. Common names for this kind of data, and they are often a cross-functional investment to create and validate ... but they are an essential part of tuning a search or RAG experience :
+
+Judgement Set (UK spelling)
+Judgment Set (US spelling)
+Golden Data
+Ground Truth Data
+🤔 We'll use the UK spelling of judgement in this lab. Why you ask? because that's what is used in some of the code libraries. Don't be judgy. 🤔
+
+To evaluate the quality of a search query against a judgement set, we'll need to make use of the /_rank_eval API. We'll need to give the API the following:
+
+A set of searches specified as requests
+For each request we'll give the API set of ratings of which result ids are considered a good search hit.
+And lastly, the metric by which we want to evaluate the set of requests.
+Knowing the _id of the Barcelona document above, convert the query in step 1 into a /_rank_eval that measures the Normalized Discounted Cumulative Gain @ 10 (NDCG@10) for the query.
+
+Run the following command in the console >
+  
+
+  
